@@ -51,13 +51,20 @@ For information on synchronizing your source tree with one or more of the FreeBS
 This pathed version was made for SiFive Unmatched and includes;
 * Fully working Linuxulator
 * Patched and included the IWLWIFI driver in the build
-* Patched linprocfs and some other stuff for more Linux stuff to run
-** added /proc/PID/task/TID/stuff [experimental but mostly working]
-** some other updates that still need some ironing out
+* Patched linprocfs/psuedofs and some other stuff for more Linux stuff to work correctly
+* - added /proc/PID/task/TID/stuff [experimental but mostly working]
 * Adapted driver for temperature sensor and added driver for reading the onboard eeprom
 * Fixed some small bugs in the kernel (signals when working with the FP have a chance to mess up the FP state in the base kernel)
 * Added driver for the PWM so we can control the leds.
-* Some experimental 'fixes' for shareing kqueue/epoll between threads.
+* Some experimental 'fixes' for sharing kqueue/epoll between threads.
 * Probably doesn't completely compile on other platforms anymore because of some modified file where I forgot to check for arch, not tested this yet.
 * Implemented some experimental stuff like the linux splice syscall (using sendfile) and some others
 * May still include some debug messages (I'm currently doublechecking if I left any)
+
+This is an experimental version, there maybe new bugs that I didn't run into yet but here it's stable on myu SiFive Unmatched running and compiling native and Linux stuff in the linuxulator for weeks.
+
+Take what you need to implement this in BASE;
+ If you copy riscv/linux, restore the syscall.master file (no added syscalls) and apply some minor changes to compat/linux you get this running on the vanilla kernel in no-time.
+ linprocfs changes require you to pull the pseudofs code to give it thread enumeration powers.
+ iwlwifi drivers fix are a couple of defines and a dummy function and also easy to replicate
+ 'get gdb working' patches are what probably breaks compatibility (compat/linux/linux_ptrace.c and linux_misc.c) and need some #ifdef stuff to make it other arch friendly again probably.
