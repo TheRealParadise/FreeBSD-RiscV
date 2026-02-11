@@ -278,6 +278,8 @@ page_fault_handler(struct trapframe *frame, int usermode)
 		} else {
 			// `hexdump -C /dev/mem --skip 1 -n 8` fix; there seems to be some issue with the tilebus and reading invalid addresses, this is an ugly fix for that.
 			if (pcb->pcb_onfault != 0) {
+				// Removed this 'patch' for now, just do not try to access /dev/mem wrong for the moment. :-) 
+
 				//if (frame->tf_sepc == pcb->pcb_last_fault_pc && frame->tf_stval == pcb->pcb_last_fault_va) {
 				//	//pcb->pcb_fault_strikes++;
 				//	//if (pcb->pcb_fault_strikes > 10) {
@@ -425,11 +427,6 @@ do_trap_user(struct trapframe *frame)
 
 	CTR4(KTR_TRAP, "%s: exception=%lu, sepc=%#lx, stval=%#lx", __func__,
 	    exception, frame->tf_sepc, frame->tf_stval);
-
-///	if ((frame->tf_sepc >= 0x3fffffd000 && frame->tf_sepc <= 0x3fffffd020) || frame->tf_stval == 0x20) {
-///		printf("DEBUG USER TRAP: %s: exc=%lu, sepc=%lx, stval=%lx\n", __func__, exception, (unsigned long)frame->tf_sepc, (unsigned long)frame->tf_stval);
-///	}
-
 
 	switch (exception) {
 	case SCAUSE_LOAD_ACCESS_FAULT:

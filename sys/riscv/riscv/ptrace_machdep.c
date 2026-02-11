@@ -62,17 +62,14 @@
 #include <machine/trap.h>
 
 int ptrace_set_pc(struct thread *td, u_long addr) {
-
 	td->td_frame->tf_sepc = addr;
 	return (0);
 }
 
 int ptrace_single_step(struct thread *td) {
 	PROC_LOCK_ASSERT(td->td_proc, MA_OWNED);
-
 	td->td_pcb->pcb_flags |= PCB_SINGLE_STEP;
 	td->td_dbgflags |= TDB_STEP;
-
 	return (0);
 }
 

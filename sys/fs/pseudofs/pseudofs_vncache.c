@@ -119,8 +119,6 @@ int pfs_vncache_alloc(struct mount *mp, struct vnode **vpp, struct pfs_node *pn,
 	enum vgetstate vs;
 	int error;
 
-//	printf("PFS_ALLOC: node=%s, pid=%d, tid=%d\n", pn->pn_name, pid, tid);
-
 	/*
 	 * See if the vnode is in the cache.
 	 */

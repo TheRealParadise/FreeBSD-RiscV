@@ -112,7 +112,9 @@ LINUX_VDSO_SYM_INTPTR(kern_timekeep_base);
 LINUX_VDSO_SYM_INTPTR(__user_rt_sigreturn);
 
 
- 
+/* 
+ * Syscall from Linuxland comes trough here
+ */
 static int linux_fetch_syscall_args(struct thread *td) {
 	struct proc *p;
 	struct syscall_args *sa;
@@ -141,6 +143,9 @@ static int linux_fetch_syscall_args(struct thread *td) {
 	return (0);
 }
 
+/* 
+ * Returning to Linuxland here
+ */
 static void linux_set_syscall_retval(struct thread *td, int error) {
         struct trapframe *frame=td->td_frame;
  
@@ -162,6 +167,7 @@ static void linux_set_syscall_retval(struct thread *td, int error) {
         }
 }
 
+// TODO Where is the include for this struct, counldn't find it. 
 
 struct elf64_auxargs {
         Elf_Ssize       execfd;
@@ -184,6 +190,9 @@ struct elf_args {
 };
 
     
+/*
+ * Some AUXV stuff we require to get Linux up-to-speed.
+ */
 
 void linux64_arch_copyout_auxargs(struct image_params *imgp, Elf_Auxinfo **pos) {
 	AUXARGS_ENTRY((*pos), LINUX_AT_SYSINFO_EHDR, linux_vdso_base);
@@ -192,9 +201,7 @@ void linux64_arch_copyout_auxargs(struct image_params *imgp, Elf_Auxinfo **pos) 
         	AUXARGS_ENTRY((*pos), LINUX_AT_HWCAP2, *imgp->sysent->sv_hwcap2);
 	}
 	AUXARGS_ENTRY((*pos), LINUX_AT_PLATFORM, PTROUT(linux_platform));
-
-
-	AUXARGS_ENTRY((*pos), AT_L1I_CACHELINESIZE, 64); // 0 is usually a safe 'unknown'
+	AUXARGS_ENTRY((*pos), AT_L1I_CACHELINESIZE, 64); // SiFive/U74 specific TODO: get this some way else
 	AUXARGS_ENTRY((*pos), AT_L1D_CACHELINESIZE, 64);
 }
 
@@ -279,7 +286,6 @@ typedef union {
 	uint64_t	     raw[128];
 } l_rt_fullsigframe;
 
-
 static int linux_restore_sigframe(struct thread *td , struct l_rt_sigframe *l_frame){
 	struct trapframe *tf=td->td_frame;
 	
@@ -291,7 +297,6 @@ static int linux_restore_sigframe(struct thread *td , struct l_rt_sigframe *l_fr
 	for (int i = 0; i < 3; i++) tf->tf_t[i]=l_frame->sf_uc.uc_mcontext.sc_regs[5 + i];
 	for (int i = 0; i < 2; i++) tf->tf_s[i]=l_frame->sf_uc.uc_mcontext.sc_regs[8 + i];
 	for (int i = 0; i < 8; i++) tf->tf_a[i]=l_frame->sf_uc.uc_mcontext.sc_regs[10 + i];
-
 	for (int i = 0; i < 10; i++) tf->tf_s[2+i]=l_frame->sf_uc.uc_mcontext.sc_regs[18 + i];
 	for (int i = 0; i < 4; i++) tf->tf_t[3+i]=l_frame->sf_uc.uc_mcontext.sc_regs[28 + i];
 
@@ -312,6 +317,10 @@ static int linux_restore_sigframe(struct thread *td , struct l_rt_sigframe *l_fr
 }
 
 
+/*
+ * When the Linux binary is done with a signal we pass trough this
+ */
+
 int linux_rt_sigreturn(struct thread *td, struct linux_rt_sigreturn_args *args){
 	sigset_t bmask;
 	struct trapframe *tf = td->td_frame;
@@ -327,7 +336,9 @@ int linux_rt_sigreturn(struct thread *td, struct linux_rt_sigreturn_args *args){
 	return (linux_restore_sigframe(td, frame));
 }
 
-
+/*
+ * Save the contents of the floatingpoint
+ */
 static int linux_save_fpcontext(struct thread *td, struct l_sigcontext *u_ctx) {
 
 	struct pcb *pcb = td->td_pcb;
@@ -358,6 +369,9 @@ static int linux_save_fpcontext(struct thread *td, struct l_sigcontext *u_ctx) {
 
 }
 
+/*
+ * when someone is brave enough to send a Linux process a signal (HUP, HUB, USR1, etc) it will get here
+ */
 static int linux_create_sigframe(struct thread *td , struct l_rt_sigframe *l_frame){
 	struct trapframe *tf=td->td_frame;
 	
@@ -453,13 +467,16 @@ static void linux_rt_sendsig(sig_t catcher, ksiginfo_t *ksi, sigset_t *mask) {
 	tf->tf_ra = (register_t)__user_rt_sigreturn; 
 
 out:
-    /* Restore locks before returning to ast_sig */
+        /* Restore locks before returning to ast_sig */
 	PROC_LOCK(p);
 out_locked:
 	mtx_lock(&psp->ps_mtx);
 }
 
 
+/*
+ * Helper for loading elves.
+ */
 static int linux64_elf64_fixup(uintptr_t *stack_base, struct image_params *imgp) {
 	Elf_Addr *base, *destp;
 	int64_t val;
@@ -500,7 +517,6 @@ static int linux64_elf64_fixup(uintptr_t *stack_base, struct image_params *imgp)
 static int linux_elf64_coredump(struct thread *td, struct coredump_writer *cdw, off_t offset, int flags){
 	return(elf64_coredump(td, cdw, offset, flags));
 }
-
 
 
 struct sysentvec elf_linux_sysvec = {
@@ -552,9 +568,6 @@ linux_on_exec_vmspace(struct proc *p, struct image_params *imgp)
 	int error;
 
 	error = linux_map_vdso(p, linux_vdso_obj, linux_vdso_base, LINUX_VDSOPAGE_SIZE, imgp);
-
-	//printf("linux_on_exec_vmspace: Mapped %d at %08lx, error %d\n", LINUX_VDSOPAGE_SIZE, linux_vdso_base, error);
-
 	if (error == 0) error = linux_on_exec(p, imgp);
 
 	return (error);
@@ -599,9 +612,8 @@ static void linux_vdso_install(const void *param) {
 
 	linux_vdso_reloc(linux_vdso_mapping, linux_vdso_base);
 
-    //printf("linux_vdso_install: done, copied %d bytes to 0x%08lx.\n", linux_szsigcode, (uint64_t)vdso_start);
-
 }
+
 SYSINIT(elf_linux_vdso_init, SI_SUB_EXEC + 1, SI_ORDER_FIRST,
     linux_vdso_install, NULL);
 
@@ -658,11 +670,8 @@ static void linux_vdso_reloc(char *elf, Elf_Addr offset) {
         uint64_t type = ELF_R_TYPE(rela[i].r_info);
         
         if (type == R_RISCV_RELATIVE) {
-            // r_offset is also a VA. Translate it to a pointer within our buffer.
-            where = (Elf_Addr *)(elf + (rela[i].r_offset - loadaddr));
-            
-            // The actual magic: store the final runtime address.
-            *where = offset + rela[i].r_addend;
+		where = (Elf_Addr *)(elf + (rela[i].r_offset - loadaddr));	// r_offset is also a VA. Translate it to a pointer within our buffer.
+		*where = offset + rela[i].r_addend;	            		// The actual magic: store the final runtime address.
         }
     }
 }
@@ -713,7 +722,7 @@ linux64_elf_modevent(module_t mod, int type, void *data)
 			if (bootverbose) printf("Linux RiscV64 ELF exec handler installed\n");
 
 			uint32_t hwcap = 0;
-			hwcap |= (1 << ('I' - 'A'));	// TODO fix me!
+			hwcap |= (1 << ('I' - 'A'));	// TODO fix me, make me dynamic
 			hwcap |= (1 << ('M' - 'A'));
 			hwcap |= (1 << ('A' - 'A'));
 			hwcap |= (1 << ('F' - 'A'));

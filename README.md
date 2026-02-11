@@ -52,6 +52,8 @@ This pathed version was made for SiFive Unmatched and includes;
 * Fully working Linuxulator
 * Patched and included the IWLWIFI driver in the build
 * Patched linprocfs and some other stuff for more Linux stuff to run
+** added /proc/PID/task/TID/stuff [experimental but mostly working]
+** some other updates that still need some ironing out
 * Adapted driver for temperature sensor and added driver for reading the onboard eeprom
 * Fixed some small bugs in the kernel (signals when working with the FP have a chance to mess up the FP state in the base kernel)
 * Added driver for the PWM so we can control the leds.

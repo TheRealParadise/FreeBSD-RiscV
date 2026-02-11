@@ -1206,10 +1206,10 @@ static int linprocfs_doprocstatus(PFS_FILL_ARGS) {
 	 */
 	sbuf_printf(sb, "Tgid:\t%d\n",		p->p_pid);
 
-	if(pn->pn_data == 0){
-		sbuf_printf(sb, "Pid:\t%d\n",		p->p_pid);
+	if(pn->pn_data == 0){							// Process or thread?
+		sbuf_printf(sb, "Pid:\t%d\n",		p->p_pid);		// Process!
 	}else{
-		lwpid_t tid = (lwpid_t)(uintptr_t)pn->pn_data;
+		lwpid_t tid = (lwpid_t)(uintptr_t)pn->pn_data;			// Thread, find it and report TID
 		struct thread *td_iter;
 
 		FOREACH_THREAD_IN_PROC(p, td_iter) {
@@ -1312,6 +1312,11 @@ static int linprocfs_threaddotid(PFS_FILL_ARGS) {
 	return (0);
 }
 
+/* Handler for /proc/PID/task/TID/comm 
+ *
+ * Read: Give the thread name if we have one, else give the process name
+ * Write: Change the thread name if we can or else return an error
+ */
 
 static int linprocfs_dothreadcomm(PFS_FILL_ARGS) {
 	lwpid_t tid = (lwpid_t)(uintptr_t)pn->pn_data;
@@ -1590,7 +1595,7 @@ static int linprocfs_doprocmaps(PFS_FILL_ARGS) {
 }
 
 /*
- * Filler function for proc/pid/mem
+ * Filler function for proc/pid/mem and proc/PID/task/TID/mem
  */
 static int
 linprocfs_doprocmem(PFS_FILL_ARGS)
@@ -1600,8 +1605,6 @@ linprocfs_doprocmem(PFS_FILL_ARGS)
 
 	resid = uio->uio_resid;
 	error = procfs_doprocmem(PFS_FILL_ARGNAMES);
-
-	printf("Reading 0x%lx = %d\n", uio->uio_offset, error);
 
 	if (uio->uio_rw == UIO_READ && resid != uio->uio_resid)
 		return (0);
@@ -1702,11 +1705,9 @@ linux_route_print(struct rtentry *rt, void *vw)
 	if (ifname_bsd_to_linux_ifp(nh->nh_ifp, ifname, sizeof(ifname)) <= 0)
 		return (ENODEV);
 
-	gw = (nh->nh_flags & NHF_GATEWAY)
-		? nh->gw4_sa.sin_addr.s_addr : 0;
+	gw = (nh->nh_flags & NHF_GATEWAY) ? nh->gw4_sa.sin_addr.s_addr : 0;
 
-	linux_flags = RTF_UP |
-		(nhop_get_rtflags(nh) & (RTF_GATEWAY | RTF_HOST));
+	linux_flags = RTF_UP | (nhop_get_rtflags(nh) & (RTF_GATEWAY | RTF_HOST));
 
 	sbuf_printf(w->sb,
 		"%s\t"
@@ -1735,9 +1736,7 @@ linprocfs_donetroute(PFS_FILL_ARGS)
 	};
 	uint32_t fibnum = curthread->td_proc->p_fibnum;
 
-	sbuf_printf(w.sb, "%-127s\n", "Iface\tDestination\tGateway "
-               "\tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU"
-               "\tWindow\tIRTT");
+	sbuf_printf(w.sb, "%-127s\n", "Iface\tDestination\tGateway\tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT");
 
 	CURVNET_SET(TD_TO_VNET(curthread));
 	NET_EPOCH_ENTER(et);
@@ -1986,8 +1985,7 @@ linprocfs_dofilesystems(PFS_FILL_ARGS)
 
 	vfsconf_slock();
 	TAILQ_FOREACH(vfsp, &vfsconf, vfc_list) {
-		if (vfsp->vfc_flags & VFCF_SYNTHETIC)
-			sbuf_printf(sb, "nodev");
+		if (vfsp->vfc_flags & VFCF_SYNTHETIC) sbuf_printf(sb, "nodev");
 		sbuf_printf(sb, "\t%s\n", vfsp->vfc_name);
 	}
 	vfsconf_sunlock();
@@ -2004,7 +2002,7 @@ static void linprocfs_fixname(char *out, char *name){
 }
 
 /*
- * Filler function for proc/modules
+ * Filler function for proc/modules [experimental, probably should use locks here]
  */
 static int linprocfs_domodules(PFS_FILL_ARGS) {
 #if 1
@@ -2416,8 +2414,7 @@ linprocfs_doinotify(const char *sysctl, PFS_FILL_ARGS)
 static int
 linprocfs_doinotify_max_queued_events(PFS_FILL_ARGS)
 {
-	return (linprocfs_doinotify("vfs.inotify.max_queued_events",
-	    PFS_FILL_ARGNAMES));
+	return (linprocfs_doinotify("vfs.inotify.max_queued_events", PFS_FILL_ARGNAMES));
 }
 
 /*
@@ -2426,8 +2423,7 @@ linprocfs_doinotify_max_queued_events(PFS_FILL_ARGS)
 static int
 linprocfs_doinotify_max_user_instances(PFS_FILL_ARGS)
 {
-	return (linprocfs_doinotify("vfs.inotify.max_user_instances",
-	    PFS_FILL_ARGNAMES));
+	return (linprocfs_doinotify("vfs.inotify.max_user_instances", PFS_FILL_ARGNAMES));
 }
 
 /*
@@ -2436,8 +2432,7 @@ linprocfs_doinotify_max_user_instances(PFS_FILL_ARGS)
 static int
 linprocfs_doinotify_max_user_watches(PFS_FILL_ARGS)
 {
-	return (linprocfs_doinotify("vfs.inotify.max_user_watches",
-	    PFS_FILL_ARGNAMES));
+	return (linprocfs_doinotify("vfs.inotify.max_user_watches", PFS_FILL_ARGNAMES));
 }
 
 /*
@@ -2449,8 +2444,7 @@ linprocfs_domqueue_msg_default(PFS_FILL_ARGS)
 	int res, error;
 	size_t size = sizeof(res);
 
-	error = kernel_sysctlbyname(curthread, "kern.mqueue.default_maxmsg",
-	    &res, &size, NULL, 0, 0, 0);
+	error = kernel_sysctlbyname(curthread, "kern.mqueue.default_maxmsg", &res, &size, NULL, 0, 0, 0);
 	if (error != 0)
 		return (error);
 
@@ -2467,8 +2461,7 @@ linprocfs_domqueue_msgsize_default(PFS_FILL_ARGS)
 	int res, error;
 	size_t size = sizeof(res);
 
-	error = kernel_sysctlbyname(curthread, "kern.mqueue.default_msgsize",
-	    &res, &size, NULL, 0, 0, 0);
+	error = kernel_sysctlbyname(curthread, "kern.mqueue.default_msgsize", &res, &size, NULL, 0, 0, 0);
 	if (error != 0)
 		return (error);
 
@@ -2504,8 +2497,7 @@ linprocfs_domqueue_msgsize_max(PFS_FILL_ARGS)
 	int res, error;
 	size_t size = sizeof(res);
 
-	error = kernel_sysctlbyname(curthread, "kern.mqueue.maxmsgsize",
-	    &res, &size, NULL, 0, 0, 0);
+	error = kernel_sysctlbyname(curthread, "kern.mqueue.maxmsgsize", &res, &size, NULL, 0, 0, 0);
 	if (error != 0)
 		return (error);
 
@@ -2522,8 +2514,7 @@ linprocfs_domqueue_queues_max(PFS_FILL_ARGS)
 	int res, error;
 	size_t size = sizeof(res);
 
-	error = kernel_sysctlbyname(curthread, "kern.mqueue.maxmq",
-	    &res, &size, NULL, 0, 0, 0);
+	error = kernel_sysctlbyname(curthread, "kern.mqueue.maxmq", &res, &size, NULL, 0, 0, 0);
 	if (error != 0)
 		return (error);
 

@@ -44,14 +44,9 @@
 .endm
 
 futex_fault:
-        /* 1. Clear the fault handler to prevent recursive fault loops */
         SET_FAULT_HANDLER(zero, t1)
-
-        /* 2. EXIT_USER_ACCESS_CHECK equivalent */
-        /* We must ensure the SUM (Supervisor User Memory) bit is cleared so the kernel doesn't maintain elevated access permissions. */
         li      t1, SSTATUS_SUM
         csrc    sstatus, t1             /* Clear SUM bit in sstatus */
-
 futex_fault_nopcb:
         /* 3. Return the standard EFAULT error code */
         li      a0, -EFAULT
@@ -76,175 +71,120 @@ ENTRY(futex_xchgl)
            a2 = oldval_out (kernel pointer to store the old value)
         */
 
-        /* 1. Setup Fault Handler */
+        // Setup Fault Handler
         la      t1, futex_fault
         SET_FAULT_HANDLER(t1, t0)
 
-        /* 2. Enable User Memory Access (SUM bit) */
+        // Enable User Memory Access (SUM bit)
         li      t2, SSTATUS_SUM
-        csrrs   t3, sstatus, t2         /* Save old sstatus in t3 */
-
-        /* 3. The Atomic Swap 
-           amoswap.w.aqrl: 
-           .w    = 32-bit word
-           .aqrl = Acquire + Release memory barriers (full fence)
-           t0    = Destination for old value
-           a0    = Source of new value
-           (a1)  = Target address
-        */
-1:
-        amoswap.w.aqrl t0, a0, (a1)
-
-        /* 4. Disable User Access (Restore sstatus) */
-        csrw    sstatus, t3
-        
-        /* 5. Cleanup and Store Result */
-        SET_FAULT_HANDLER(zero, t1)     /* Clear fault handler */
-        sw      t0, 0(a2)               /* Write old value to the output pointer */
-        
-        li      a0, 0                   /* Return success (0) */
+        csrrs   t3, sstatus, t2         // Save old sstatus in t3 */
+1:      amoswap.w.aqrl t0, a0, (a1)
+        csrw    sstatus, t3		// Disable User Access (Restore sstatus) 
+       
+        // Cleanup and Store Result
+        SET_FAULT_HANDLER(zero, t1)     // Clear fault handler
+        sw      t0, 0(a2)               // Write old value to the output pointer
+        li      a0, 0                   // Return success (0)
         ret
 END(futex_xchgl)
 
+
+// TODO: FIX/CHECK ALL BELOW
 /* (int *)uaddr2 += oparg */
 ENTRY(futex_addl)
-        /* 1. Setup Fault Handler */
+        // Setup Fault Handler
         la      t1, futex_fault
         SET_FAULT_HANDLER(t1, t0)
         
-        /* 2. Enable User Access (SUM bit) */
+        // Enable User Access (SUM bit)
         li      t2, SSTATUS_SUM
-        csrrs   t3, sstatus, t2         /* Enable User Access, save old status in t3 */
+        csrrs   t3, sstatus, t2         // Enable User Access, save old status in t3
 
         li      t4, LINUX_FUTEX_MAX_LOOPS
-        /* a0 = oparg, a1 = uaddr, a2 = oldval_out */
 1:
-	lr.w.aq t0, (a1)                /* Load Reserved (oldval) from USER */
-	add     t1, t0, a0              /* Calculate newval */
-	sc.w.rl t5, t1, (a1)            /* Store Conditional to USER */
-	bnez    t5, 2f                  /* Failed? Go to retry logic */
+	lr.w.aq t0, (a1)                // Load Reserved (oldval) from USER
+	add     t1, t0, a0              // Calculate newval
+	sc.w.rl t5, t1, (a1)            // Store Conditional to USER
+	bnez    t5, 2f                  // Failed? Go to retry logic
 
-	/* SUCCESS PATH */
-	li      a0, 0
+	li      a0, 0			// SUCCESS PATH
 	j       4f
 
-2: 	/* RETRY LOGIC */
+2: 	// RETRY LOGIC
 	addi    t4, t4, -1
 	bnez    t4, 1b
-	li      a0, -EFAULT              /* If we can't hit it in X loops, something is wrong */
+	li      a0, -EFAULT             // If we can't hit it in X loops, something is wrong
 
-4:      /* 3. Cleanup and Exit */
-        sw      t0, 0(a2)               /* Store the captured oldval to *oldval_out */
-        csrw    sstatus, t3             /* EXIT_USER_ACCESS: Restore sstatus */
-        SET_FAULT_HANDLER(zero, t1)     /* Reset fault handler */
+4:      // Cleanup and Exit
+        sw      t0, 0(a2)               // Store the captured oldval to *oldval_out
+        csrw    sstatus, t3             // EXIT_USER_ACCESS: Restore sstatus
+        SET_FAULT_HANDLER(zero, t1)     // Reset fault handler
         ret
 END(futex_addl)
 
 /* (int *)uaddr2 |= oparg */
 ENTRY(futex_orl)
-        /* 1. Setup Fault Handler */
         la      t1, futex_fault
-        SET_FAULT_HANDLER(t1, t0)
-        
-        /* 2. Enable User Access (SUM bit) */
+        SET_FAULT_HANDLER(t1, t0)      
         li      t2, SSTATUS_SUM
-        csrrs   t3, sstatus, t2         /* Enable User Access, save old status in t3 */
-
+        csrrs   t3, sstatus, t2         // Enable User Access, save old status in t3
         li      t4, LINUX_FUTEX_MAX_LOOPS
-        /* a0 = oparg, a1 = uaddr, a2 = oldval_out */
-
-1:
-        lr.w.aq t0, (a1)                /* Load Reserved: t0 = *uaddr */
-        or      t1, t0, a0              /* Bitwise AND: t1 = t0 & oparg */
-        sc.w.rl t5, t1, (a1)            /* Store Conditional: *uaddr = t1 */
-        
-        beqz    t5, 3f                  /* If t5 == 0, store succeeded */
-        
-        addi    t4, t4, -1              /* Decrement loop counter */
-        bnez    t4, 1b                  /* Retry if counter > 0 */
-        
-        li      a0, -EAGAIN              /* Loops exhausted, return EAGAIN */
+1:      lr.w.aq t0, (a1)                // Load Reserved: t0 = *uaddr
+        or      t1, t0, a0              // Bitwise AND: t1 = t0 & oparg
+        sc.w.rl t5, t1, (a1)            // Store Conditional: *uaddr = t1
+        beqz    t5, 3f                  // If t5 == 0, store succeeded
+        addi    t4, t4, -1              // Decrement loop counter
+        bnez    t4, 1b                  // Retry if counter > 0
+        li      a0, -EAGAIN             // Loops exhausted, return EAGAIN
         j       4f
-
-3:
-        li      a0, 0                   /* Success return code */
-
-4:      /* 3. Cleanup and Exit */
-        sw      t0, 0(a2)               /* Store the captured oldval to *oldval_out */
-        csrw    sstatus, t3             /* EXIT_USER_ACCESS: Restore sstatus */
-        SET_FAULT_HANDLER(zero, t1)     /* Reset fault handler */
+3:      li      a0, 0                   // Success return code
+4:      sw      t0, 0(a2)               // Store the captured oldval to *oldval_out
+        csrw    sstatus, t3             // EXIT_USER_ACCESS: Restore sstatus
+        SET_FAULT_HANDLER(zero, t1)     // Reset fault handler
         ret
 END(futex_orl)
 
 /* (int *)uaddr2 &= oparg */
 ENTRY(futex_andl)
-        /* 1. Setup Fault Handler */
         la      t1, futex_fault
         SET_FAULT_HANDLER(t1, t0)
-        
-        /* 2. Enable User Access (SUM bit) */
         li      t2, SSTATUS_SUM
-        csrrs   t3, sstatus, t2         /* Enable User Access, save old status in t3 */
-
+        csrrs   t3, sstatus, t2         // Enable User Access, save old status in t3
         li      t4, LINUX_FUTEX_MAX_LOOPS
-        /* a0 = oparg, a1 = uaddr, a2 = oldval_out */
-
-1:
-        lr.w.aq t0, (a1)                /* Load Reserved: t0 = *uaddr */
-        and     t1, t0, a0              /* Bitwise AND: t1 = t0 & oparg */
-        sc.w.rl t5, t1, (a1)            /* Store Conditional: *uaddr = t1 */
-        
-        beqz    t5, 3f                  /* If t5 == 0, store succeeded */
-        
-        addi    t4, t4, -1              /* Decrement loop counter */
-        bnez    t4, 1b                  /* Retry if counter > 0 */
-        
-        li      a0, -EAGAIN              /* Loops exhausted, return EAGAIN */
+1:      lr.w.aq t0, (a1)                // Load Reserved: t0 = *uaddr
+        and     t1, t0, a0              // Bitwise AND: t1 = t0 & oparg
+        sc.w.rl t5, t1, (a1)            // Store Conditional: *uaddr = t1
+        beqz    t5, 3f                  // If t5 == 0, store succeeded
+        addi    t4, t4, -1              // Decrement loop counter
+        bnez    t4, 1b                  // Retry if counter > 0
+        li      a0, -EAGAIN             // Loops exhausted, return EAGAIN
         j       4f
-
-3:
-        li      a0, 0                   /* Success return code */
-
-4:      /* 3. Cleanup and Exit */
-        sw      t0, 0(a2)               /* Store the captured oldval to *oldval_out */
-        csrw    sstatus, t3             /* EXIT_USER_ACCESS: Restore sstatus */
-        SET_FAULT_HANDLER(zero, t1)     /* Reset fault handler */
+3:      li      a0, 0                   // Success return code
+4:      sw      t0, 0(a2)               // Store the captured oldval to *oldval_out
+        csrw    sstatus, t3             // EXIT_USER_ACCESS: Restore sstatus
+        SET_FAULT_HANDLER(zero, t1)     // Reset fault handler
         ret
 END(futex_andl)
 
 /* (int *)uaddr2 ^= oparg */
 ENTRY(futex_xorl)
-        /* 1. Setup Fault Handler */
         la      t1, futex_fault
         SET_FAULT_HANDLER(t1, t0)
-        
-        /* 2. Enable User Access (SUM bit) */
         li      t2, SSTATUS_SUM
-        csrrs   t3, sstatus, t2         /* Enable User Access, save old status in t3 */
-
+        csrrs   t3, sstatus, t2         // Enable User Access, save old status in t3
         li      t4, LINUX_FUTEX_MAX_LOOPS
-        /* a0 = oparg, a1 = uaddr, a2 = oldval_out */
-
-1:
-        lr.w.aq t0, (a1)                /* Load Reserved: t0 = *uaddr */
-        xor     t1, t0, a0              /* Bitwise XOR: t1 = t0 & oparg */
-        sc.w.rl t5, t1, (a1)            /* Store Conditional: *uaddr = t1 */
-        
-        beqz    t5, 3f                  /* If t5 == 0, store succeeded */
-        
-        addi    t4, t4, -1              /* Decrement loop counter */
-        bnez    t4, 1b                  /* Retry if counter > 0 */
-        
-        li      a0, -EAGAIN              /* Loops exhausted, return EAGAIN */
+1:      lr.w.aq t0, (a1)                // Load Reserved: t0 = *uaddr
+        xor     t1, t0, a0              // Bitwise XOR: t1 = t0 & oparg
+        sc.w.rl t5, t1, (a1)            // Store Conditional: *uaddr = t1
+        beqz    t5, 3f                  // If t5 == 0, store succeeded
+        addi    t4, t4, -1              // Decrement loop counter
+        bnez    t4, 1b                  // Retry if counter > 0
+        li      a0, -EAGAIN             // Loops exhausted, return EAGAIN
         j       4f
-
-3:
-        li      a0, 0                   /* Success return code */
-
-4:      /* 3. Cleanup and Exit */
-        sw      t0, 0(a2)               /* Store the captured oldval to *oldval_out */
-        csrw    sstatus, t3             /* EXIT_USER_ACCESS: Restore sstatus */
-        SET_FAULT_HANDLER(zero, t1)     /* Reset fault handler */
+3:      li      a0, 0                   // Success return code
+4:      sw      t0, 0(a2)               // Store the captured oldval to *oldval_out
+        csrw    sstatus, t3             // EXIT_USER_ACCESS: Restore sstatus
+        SET_FAULT_HANDLER(zero, t1)     // Reset fault handler
         ret
 END(futex_xorl)
 

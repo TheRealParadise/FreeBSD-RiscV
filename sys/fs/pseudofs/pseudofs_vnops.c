@@ -1078,17 +1078,10 @@ pfs_readdir(struct vop_readdir_args *va)
 			KASSERT(tid != 0, ("reached threaddir node with tid == 0"));
 			KASSERT(p != NULL, ("reached threaddir node with p == NULL"));
 			pfsent->entry.d_namlen = snprintf(pfsent->entry.d_name, PFS_NAMELEN, "%d", tid);
-			pfsent->entry.d_type = DT_DIR;
-
-			//printf("DEBUG_LOOKUP: thread - parent=%s, child=%s, type=%d, pid=%d, tid=%d\n", pd->pn_name, pn->pn_name, pn->pn_type, pid, tid);
-
-			break;
+			/* fall through */
 		case pfstype_threaddir:
-
-			//printf("DEBUG_LOOKUP: threaddir - parent=%s, child=%s, type=%d, pid=%d, tid=%d\n", pd->pn_name, pn->pn_name, pn->pn_type, pid, tid);
 			pfsent->entry.d_type = DT_DIR;
 			break;
-
 
 		case pfstype_procdir:
 			KASSERT(p != NULL, ("reached procdir node with p == NULL"));
