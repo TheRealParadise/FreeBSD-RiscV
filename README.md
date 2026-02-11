@@ -50,11 +50,12 @@ For information on synchronizing your source tree with one or more of the FreeBS
 
 This pathed version was made for SiFive Unmatched and includes;
 * Fully working Linuxulator
-* Pathced and included the IWLWIFI driver
+* Patched and included the IWLWIFI driver in the build
 * Patched linprocfs and some other stuff for more Linux stuff to run
 * Adapted driver for temperature sensor and added driver for reading the onboard eeprom
 * Fixed some small bugs in the kernel (signals when working with the FP have a chance to mess up the FP state in the base kernel)
 * Added driver for the PWM so we can control the leds.
-* May still include some debug messages
 * Some experimental 'fixes' for shareing kqueue/epoll between threads.
 * Probably doesn't completely compile on other platforms anymore because of some modified file where I forgot to check for arch, not tested this yet.
+* Implemented some experimental stuff like the linux splice syscall (using sendfile) and some others
+* May still include some debug messages (I'm currently doublechecking if I left any)
