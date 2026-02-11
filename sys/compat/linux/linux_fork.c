@@ -148,8 +148,6 @@ linux_fixup_epoll_inheritance(struct proc *parent, struct proc *child)
     struct fdescenttbl *ptbl, *ctbl;
     struct file *fp;
 
-    //printf("Copying filedescriptors\n");
-
     FILEDESC_SLOCK(pfdp);
     FILEDESC_XLOCK(cfdp);
 
@@ -168,24 +166,10 @@ linux_fixup_epoll_inheritance(struct proc *parent, struct proc *child)
              */
             if (i >= ctbl->fdt_nfiles || ctbl->fdt_ofiles[i].fde_file == NULL) {
                 struct thread *td_child = FIRST_THREAD_IN_PROC(child);
-		int error = kern_kqueue(td_child, 0, 0); 
+		int error = kern_kqueue(td_child, 0, 0); 					// Really bad for many reasons but it works for my experiment
 		if (error != 0){
 			printf("linux_fork: failed to make kqueue [clone]\n");
 		}
-                //if (i < ctbl->fdt_nfiles) {
-                //    (void)fhold(fp);
-                //    
-                //    ctbl->fdt_ofiles[i].fde_file = fp;
-                //    ctbl->fdt_ofiles[i].fde_flags = ptbl->fdt_ofiles[i].fde_flags;
-		//    filecaps_copy(&ptbl->fdt_ofiles[i].fde_caps, &ctbl->fdt_ofiles[i].fde_caps, true);
-		//    cfdp->fd_map[NDSLOT(i)] |= NDBIT(i);
-
-		//    struct kqueue *kq = fp->f_data; 
-		//    knlist_init_mtx(&kq->kq_sel.si_note, &cfdp->fd_sx); 
-
-		    //printf(" - Copied %d and marked as USED\n", i);
-
-               // }
             }
         }
     }

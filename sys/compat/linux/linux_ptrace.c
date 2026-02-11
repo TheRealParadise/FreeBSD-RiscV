@@ -31,7 +31,7 @@
 
 //#define DO_DEBUG_GETREGSETPR
 //#define DO_DEBUG_GETREGS
-#define DO_DEBUG_GETFPREGS
+//#define DO_DEBUG_GETFPREGS
 
 #include <sys/param.h>
 #include <sys/lock.h>
@@ -234,6 +234,8 @@ linux_ptrace_setoptions(struct thread *td, pid_t pid, l_ulong data)
 	struct linux_pemuldata *pem;
 	int mask = 0, error = 0;
 
+//	*** We needed this for GDB and we just make it work
+//
 //	if (data & (LINUX_PTRACE_O_TRACEFORK | LINUX_PTRACE_O_TRACEVFORK | LINUX_PTRACE_O_TRACECLONE)) {
 //	    printf("LINUX_DEBUG: Rejecting Fork/Clone tracing request\n");
 //	    return (EINVAL); 
@@ -253,16 +255,6 @@ linux_ptrace_setoptions(struct thread *td, pid_t pid, l_ulong data)
 
 	LINUX_PEM_XLOCK(pem);
 	pem->ptrace_flags = data;
-//	if (data & LINUX_PTRACE_O_TRACESYSGOOD) {
-//		pem->ptrace_flags |= LINUX_PTRACE_O_TRACESYSGOOD;
-//	} else {
-//		pem->ptrace_flags &= ~LINUX_PTRACE_O_TRACESYSGOOD;
-//	}
-//	if (data & LINUX_PTRACE_O_TRACEEXIT) { 
-//		pem->ptrace_flags |= LINUX_PTRACE_O_TRACEEXIT;
-//	} else {
-//		pem->ptrace_flags &= ~LINUX_PTRACE_O_TRACEEXIT;
-//	}
 	LINUX_PEM_XUNLOCK(pem);
 
 	if (data & LINUX_PTRACE_O_TRACESYSGOOD) mask |= 1;
@@ -270,12 +262,8 @@ linux_ptrace_setoptions(struct thread *td, pid_t pid, l_ulong data)
 	if (data & LINUX_PTRACE_O_TRACEVFORK) mask |= PTRACE_VFORK;
 	if (data & LINUX_PTRACE_O_TRACECLONE) mask |= PTRACE_VFORK;
 	if (data & LINUX_PTRACE_O_TRACEEXEC) mask |= PTRACE_EXEC;
-//	if (data & LINUX_PTRACE_O_TRACEVFORKDONE) mask |= PTRACE_VFORK; /* XXX: Close enough? */
 	if (data & LINUX_PTRACE_O_TRACEEXIT) mask |= PTRACE_LWP; 
-//	if (data & LINUX_PTRACE_O_EXITKILL) mask |= 1|PTRACE_EXEC|PTRACE_FORK|PTRACE_VFORK|PTRACE_LWP; 
-
-//	if(1048576 == data) mask |= 1|PTRACE_EXEC|PTRACE_FORK|PTRACE_VFORK|PTRACE_LWP;
-	if(1048576 == data) mask = PTRACE_EXEC;
+	if(1048576 == data) mask = PTRACE_EXEC;		// Some special GDB magic sause required here.
 
 	error=kern_ptrace(td, PT_SET_EVENT_MASK, pid, &mask, sizeof(mask));
 	if(error == 0 && pid != 0 && 1048576 == data){
@@ -300,11 +288,9 @@ linux_ptrace_geteventmsg(struct thread *td, pid_t pid, l_ulong data)
 
         if (error != 0) return (error);
 
-//        if (lwpinfo.pl_flags & (PL_FLAG_FORKED | PL_FLAG_CHILD)) {
 
 	l_ulong child_pid = (l_ulong)pem->cached_child_pid;
 	if (child_pid != 0) {
-//	    child_pid++;
             error = copyout(&child_pid, (void *)data, sizeof(child_pid));
 	    pem->cached_child_pid=0;
 	    //printf("LINUX_GETEVENTMSG: tracer=%d, reported_child=%lu\n", td->td_proc->p_pid, child_pid);
@@ -319,18 +305,13 @@ linux_ptrace_geteventmsg(struct thread *td, pid_t pid, l_ulong data)
 #ifdef DO_DEBUG_EVENTMSG
 	printf("< linux_ptrace_geteventmsg('%s [%d]', %d, 0x%lx) = %d [child=%lu]\n", td->td_name, td->td_proc->p_pid, pid, data, error, child_pid);
 #endif
-	return(0);
+	return(error);
 
-
-///	linux_msg(td, "PTRACE_GETEVENTMSG not implemented; returning EINVAL");
-///	return (EINVAL);
 }
 
 
 
-static int
-linux_ptrace_getsiginfo(struct thread *td, pid_t pid, l_ulong data)
-{
+static int linux_ptrace_getsiginfo(struct thread *td, pid_t pid, l_ulong data) {
         struct ptrace_lwpinfo lwpinfo;
         l_siginfo_t l_siginfo;
         int error, sig;
@@ -355,44 +336,6 @@ linux_ptrace_getsiginfo(struct thread *td, pid_t pid, l_ulong data)
 }
 
 
-/*
-static int
-linux_ptrace_getsiginfo(struct thread *td, pid_t pid, l_ulong data)
-{
-	struct ptrace_lwpinfo lwpinfo;
-	l_siginfo_t l_siginfo;
-	int error, sig;
-
-	error = kern_ptrace(td, PT_LWPINFO, pid, &lwpinfo, sizeof(lwpinfo));
-	if (error != 0) {
-		linux_msg(td, "PT_LWPINFO failed with error %d", error);
-		return (error);
-	}
-
-	if ((lwpinfo.pl_flags & PL_FLAG_SI) == 0) {
-		memset(&l_siginfo, 0, sizeof(l_siginfo));
-                l_siginfo.lsi_signo = 5; // bsd_to_linux_signal(SIGTRAP);
-                l_siginfo.lsi_code = 1; // TRAP_BRKPT
-
-                
-     		siginfo_to_lsiginfo(&lwpinfo.pl_siginfo, &l_siginfo, 5);
-                error = copyout(&l_siginfo, (void *)data, sizeof(l_siginfo));
-                return (error); 
-
-		//error = EINVAL;
-		//linux_msg(td, "no PL_FLAG_SI, returning %d", error);
-		//return (error);
-	}
-
-	sig = bsd_to_linux_signal(lwpinfo.pl_siginfo.si_signo);
-	memset(&l_siginfo, 0, sizeof(l_siginfo));
-	siginfo_to_lsiginfo(&lwpinfo.pl_siginfo, &l_siginfo, sig);
-	error = copyout(&l_siginfo, (void *)data, sizeof(l_siginfo));
-	return (error);
-}
-*/
-
-
 static int linux_ptrace_getregs(struct thread *td, pid_t pid, void *data) {
 #ifdef DO_DEBUG_GETREGS
 	char debug_name[100];
@@ -404,7 +347,6 @@ static int linux_ptrace_getregs(struct thread *td, pid_t pid, void *data) {
 	error = kern_ptrace(td, PT_GETREGS, pid, &b_reg, 0);
 	if (error != 0) goto out;
 
-	//bsd_to_linux_regset(&b_reg, &l_regset);
 	error = linux_ptrace_getregs_machdep(td, pid, &l_regset);
 	if (error != 0) goto out;
 
@@ -461,14 +403,11 @@ static int linux_ptrace_getfpregset_prstatus(struct thread *td, pid_t pid, l_ulo
 	struct fpreg bsd_fpregs;
 	struct iovec iov;
 	int error;
-	struct {
+
+	struct {				// Juck.. TODO :-)
         	uint64_t fp_x[32];
 		uint32_t fcsr;
 	} __attribute__((packed)) linux_fpregs;
-
-
-	//-- got fpregs 0x%x - %ld - %ld\n", linux_fpregs.fp_fcsr, sizeof(linux_fpregs), sizeof(iov));
-
 
 	error = copyin((const void *)data, &iov, sizeof(iov));
 	if (error != 0) {
@@ -570,9 +509,7 @@ out:
 	return (error);
 }
 
-static int
-linux_ptrace_getregset(struct thread *td, pid_t pid, l_ulong addr, l_ulong data)
-{
+static int linux_ptrace_getregset(struct thread *td, pid_t pid, l_ulong addr, l_ulong data) {
 
 	switch (addr) {
 	case LINUX_NT_PRSTATUS:
@@ -603,8 +540,6 @@ static int linux_ptrace_get_syscall_info(struct thread *td, pid_t pid, l_ulong l
 	struct syscall_info si;
 	int error;
 
-//	printf("** linux_ptrace_get_syscall_info() TODO \n");
-
 	error = kern_ptrace(td, PT_LWPINFO, pid, &lwpinfo, sizeof(lwpinfo));
 	if (error != 0) {
 		linux_msg(td, "PT_LWPINFO failed with error %d", error);
@@ -619,8 +554,7 @@ static int linux_ptrace_get_syscall_info(struct thread *td, pid_t pid, l_ulong l
 		error = kern_ptrace(td, PTLINUX_GET_SC_ARGS, pid,
 		    si.entry.args, sizeof(si.entry.args));
 		if (error != 0) {
-			linux_msg(td,
-			    "PT_LINUX_GET_SC_ARGS failed with error %d", error);
+			linux_msg(td, "PT_LINUX_GET_SC_ARGS failed with error %d", error);
 			return (error);
 		}
 	} else if (lwpinfo.pl_flags & PL_FLAG_SCX) {
@@ -628,8 +562,7 @@ static int linux_ptrace_get_syscall_info(struct thread *td, pid_t pid, l_ulong l
 		error = kern_ptrace(td, PT_GET_SC_RET, pid, &sr, sizeof(sr));
 
 		if (error != 0) {
-			linux_msg(td, "PT_GET_SC_RET failed with error %d",
-			    error);
+			linux_msg(td, "PT_GET_SC_RET failed with error %d", error);
 			return (error);
 		}
 
@@ -695,9 +628,6 @@ linux_ptrace(struct thread *td, struct linux_ptrace_args *uap)
 		}
 	}
 #endif
-
-//	printf("PTRACE_ENTRY: GDB (PID %d) requesting cmd %ld on Target %d at Addr %p\n", td->td_proc->p_pid, uap->req, pid, addr);
-//	printf("linux_ptrace() called uap->req=%ld\n", uap->req);
 
 	switch (uap->req) {
 	case LINUX_PTRACE_TRACEME:
@@ -821,12 +751,8 @@ linux_ptrace(struct thread *td, struct linux_ptrace_args *uap)
 	}
 
 out:
-	if (error == EBUSY){
+	if (error == EBUSY){		// TODO: test we still need this special req==7 case?
 		if(uap->req == 7) error = EAGAIN; else error = ESRCH;
 	}
-
-	
-//	printf("linux_ptrace() exited process=%d, uap->req=%ld, pid=%d, error=%d\n", td->td_proc->p_pid, uap->req, pid, error);
-
 	return (error);
 }

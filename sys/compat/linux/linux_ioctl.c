@@ -644,11 +644,7 @@ linux_ioctl_termio(struct thread *td, struct linux_ioctl_args *args)
 		error = fo_ioctl(fp, TIOCGETA, (caddr_t)&bios, td->td_ucred, td);
 		if (error) break;
 
-		//printf("LINUX_TCGETS PRE-MAP (BSD): iflag=0x%x oflag=0x%x cflag=0x%x lflag=0x%x\n", bios.c_iflag, bios.c_oflag, bios.c_cflag, bios.c_lflag);
-
 		bsd_to_linux_termios(&bios, &lios);
-
-		//printf("LINUX_TCGETS POST-MAP (LINUX): iflag=0x%x oflag=0x%x cflag=0x%x lflag=0x%x\n", lios.c_iflag, lios.c_oflag, lios.c_cflag, lios.c_lflag);
 
 		error = copyout(&lios, (void *)args->arg, sizeof(lios));
 		break;
@@ -3630,17 +3626,14 @@ static int linux_getflags(struct thread *td, struct linux_ioctl_args *args) {
 
 
 static int linux_ioctl_file(struct thread *td, struct linux_ioctl_args *args){
-	//int error;
 	char dummy[32] = {0};
-	//uint32_t flags = 0; 
 
 	switch (args->cmd & 0xffff) {
 		case 0x6601: /* FS_IOC_GETFLAGS */
 			return (linux_getflags(td, args));
 
 		case 0x6602: /* FS_IOC_SETFLAGS */
-			printf("Set xattr\n");
-			return(0); 		// Fake it?
+			return(0); 		// Fake it for now..
 
 		case 0x660B: /* FS_IOC_FSGETXATTR */
 			if (copyout(dummy, PTRIN(args->arg), sizeof(dummy)) != 0) return (EFAULT);

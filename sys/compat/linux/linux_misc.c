@@ -142,9 +142,7 @@ int linux_delete_module(struct thread *td, struct linux_delete_module_args *args
     return (kern_kldunload(td, lf->id, LINKER_UNLOAD_NORMAL));
 }
 
-int
-linux_sysinfo(struct thread *td, struct linux_sysinfo_args *args)
-{
+int linux_sysinfo(struct thread *td, struct linux_sysinfo_args *args) {
 	struct l_sysinfo sysinfo;
 	int i, j;
 	struct timespec ts;
@@ -223,9 +221,7 @@ linux_alarm(struct thread *td, struct linux_alarm_args *args)
 }
 #endif
 
-int
-linux_brk(struct thread *td, struct linux_brk_args *args)
-{
+int linux_brk(struct thread *td, struct linux_brk_args *args) {
 	struct vmspace *vm = td->td_proc->p_vmspace;
 	uintptr_t new, old;
 
@@ -240,9 +236,7 @@ linux_brk(struct thread *td, struct linux_brk_args *args)
 }
 
 #ifdef LINUX_LEGACY_SYSCALLS
-int
-linux_select(struct thread *td, struct linux_select_args *args)
-{
+int linux_select(struct thread *td, struct linux_select_args *args) {
 	l_timeval ltv;
 	struct timeval tv0, tv1, utv, *tvp;
 	int error;
@@ -307,9 +301,7 @@ select_out:
 }
 #endif
 
-int
-linux_mremap(struct thread *td, struct linux_mremap_args *args)
-{
+int linux_mremap(struct thread *td, struct linux_mremap_args *args) {
 	uintptr_t addr;
 	size_t len;
 	int error = 0;
@@ -359,47 +351,32 @@ int linux_setfsgid(struct thread *td, struct linux_setfsgid_args *args) {
     return (0);
 }
 
-int
-linux_msync(struct thread *td, struct linux_msync_args *args)
-{
-
-	return (kern_msync(td, args->addr, args->len,
-	    args->fl & ~LINUX_MS_SYNC));
+int linux_msync(struct thread *td, struct linux_msync_args *args) {
+	return (kern_msync(td, args->addr, args->len, args->fl & ~LINUX_MS_SYNC));
 }
 
-int
-linux_mprotect(struct thread *td, struct linux_mprotect_args *uap)
-{
-
-	return (linux_mprotect_common(td, PTROUT(uap->addr), uap->len,
-	    uap->prot));
+int linux_mprotect(struct thread *td, struct linux_mprotect_args *uap) {
+	return (linux_mprotect_common(td, PTROUT(uap->addr), uap->len, uap->prot));
 }
 
-int
-linux_madvise(struct thread *td, struct linux_madvise_args *uap)
-{
-
-	return (linux_madvise_common(td, PTROUT(uap->addr), uap->len,
-	    uap->behav));
+int linux_madvise(struct thread *td, struct linux_madvise_args *uap) {
+	return (linux_madvise_common(td, PTROUT(uap->addr), uap->len,  uap->behav));
 }
 
-int
-linux_mmap2(struct thread *td, struct linux_mmap2_args *uap)
-{
+int linux_mmap2(struct thread *td, struct linux_mmap2_args *uap) {
 #if defined(LINUX_ARCHWANT_MMAP2PGOFF)
 	/*
 	 * For architectures with sizeof (off_t) < sizeof (loff_t) mmap is
 	 * implemented with mmap2 syscall and the offset is represented in
 	 * multiples of page size.
 	 */
-	return (linux_mmap_common(td, PTROUT(uap->addr), uap->len, uap->prot,
-	    uap->flags, uap->fd, (uint64_t)(uint32_t)uap->pgoff * PAGE_SIZE));
+	return (linux_mmap_common(td, PTROUT(uap->addr), uap->len, uap->prot, uap->flags, uap->fd, (uint64_t)(uint32_t)uap->pgoff * PAGE_SIZE));
 #else
+//	TODO: FIX ME SO I WORK ON OTHER ARCHS AGAIN, THIS WORKS FOR RISCV
 //	uint64_t offset = uap->pgoff;
 //	if (strcmp(td->td_proc->p_comm, "link") == 0 || strcmp(td->td_proc->p_comm, "go") == 0) {
 //	    if(offset > 0 && offset < 4096)  offset <<= PAGE_SHIFT;
 //	}
-//	printf("LINUX_MMAP2: fd=%lu, prot=%lu, flags=0x%lx, offset=%jx\n",  uap->fd, uap->prot, uap->flags, (uintmax_t)uap->pgoff);
 
 	return (linux_mmap_common(td, PTROUT(uap->addr), uap->len, uap->prot, uap->flags, uap->fd, uap->pgoff));
 #endif
@@ -474,9 +451,7 @@ linux_times(struct thread *td, struct linux_times_args *args)
 	return (0);
 }
 
-int
-linux_newuname(struct thread *td, struct linux_newuname_args *args)
-{
+int linux_newuname(struct thread *td, struct linux_newuname_args *args) {
 	struct l_new_utsname utsname;
 	char osname[LINUX_MAX_UTSNAME];
 	char osrelease[LINUX_MAX_UTSNAME];
@@ -741,16 +716,6 @@ linux_common_wait(struct thread *td, idtype_t idtype, int id, int *statusp, int 
         struct __wrusage wru;
         int error, status=0, tmpstat=0, sig;
 
-//	printf("LINUX_WAIT_ENTER: PID=%d, id=%d, options=0x%x (%d/%d/%d)\n", td->td_proc->p_pid, id, options, rup==NULL, infop==NULL, idtype);
-
-//	LINUX_WAIT_ENTER: PID=11740, id=11743, options=0x32
-
-//	if (options == 0x32 && id != 0 && td->td_name[3]==0 && td->td_name[0]=='g' && td->td_name[1]=='d' && td->td_name[2]=='b') {
-//		options|=WNOHANG;
-//		options|=WNOWAIT;
-//		printf("Upgraded wait\n");
-//	}
-
         error = kern_wait6(td, idtype, id, &status, options, rup != NULL ? &wru : NULL, &siginfo);
 
         if (error == 0 && statusp) {
@@ -770,11 +735,6 @@ linux_common_wait(struct thread *td, idtype_t idtype, int id, int *statusp, int 
                         tmpstat = 0xffff;
                 }
 
-//		if(id != 0 && id == td->td_retval[0] && status == 0x117f){
-//#define	_WSTOPPED	0177	
-//			tmpstat=_WSTOPPED;
-//		}
-
                 error = copyout(&tmpstat, statusp, sizeof(int));
         }
         if (error == 0 && rup != NULL)
@@ -782,87 +742,12 @@ linux_common_wait(struct thread *td, idtype_t idtype, int id, int *statusp, int 
 
         if (error == 0 && infop != NULL && td->td_retval[0] != 0) {
                 sig = bsd_to_linux_signal(siginfo.si_signo);
-
-//		printf("> siginfo_to_lsiginfo(,,0x%x) bsd-sig=0x%x", sig, siginfo.si_signo);
-
                 siginfo_to_lsiginfo(&siginfo, &lsi, sig);
                 error = copyout(&lsi, infop, sizeof(lsi));
         }
 
-//	printf("LINUX_WAIT_FINAL: target_id=%d, reaped_pid=%ld, raw_bsd_status=0x%x, translated_tmpstat=0x%x, bsd_sig=%d, error=%d, infop=%d\n", id, (long)td->td_retval[0], status, tmpstat, WSTOPSIG(status), error, infop == NULL);
-
         return (error);
 }
-
-
-/*
-static int
-linux_common_wait(struct thread *td, idtype_t idtype, int id, int *statusp, int options, void *rup, l_siginfo_t *infop) {
-        l_siginfo_t lsi;
-        siginfo_t siginfo;
-        struct __wrusage wru;
-        int error, status, tmpstat=0, sig;
-
-//	printf("LINUX_WAIT_ENTER: PID=%d, id=%d, options=0x%x\n", td->td_proc->p_pid, id, options);
-        error = kern_wait6(td, idtype, id, &status, options, rup != NULL ? &wru : NULL, &siginfo);
-
-        if (error == 0 && statusp) {
-                tmpstat = status & 0xffff;
-
-                if (WIFSIGNALED(tmpstat)) {
-			int core = (tmpstat & 0x80); 
-                        tmpstat = core | bsd_to_linux_signal(WTERMSIG(tmpstat));
-//                        tmpstat = (tmpstat & 0xffffff80) | bsd_to_linux_signal(WTERMSIG(tmpstat));
-                } else if (WIFSTOPPED(tmpstat)) {
-			sig = bsd_to_linux_signal(WSTOPSIG(tmpstat));
-			tmpstat = (sig << 8) | 0x7f;
-//                        tmpstat = (tmpstat & 0xffff00ff) | (bsd_to_linux_signal(WSTOPSIG(tmpstat)) << 8);
-
-#if defined(__aarch64__) || defined(__riscv) || (defined(__amd64__) && !defined(COMPAT_LINUX32))
-                        if (WSTOPSIG(status) == SIGTRAP) {
-                                tmpstat = linux_ptrace_status(td, siginfo.si_pid, tmpstat);
-			}
-#endif
-
-                } else if (WIFCONTINUED(tmpstat)) {
-                        tmpstat = 0xffff;
-                }
-
-		//if (tmpstat == 0 && id != 0 && status == 0 && (long)id == (long)td->td_retval[0] && td->td_name[3]==0 && td->td_name[0]=='g' && td->td_name[1]=='d' && td->td_name[2]=='b') {
-
-
-			//tmpstat = 9;		// Under a killing moon just for GDB
-		//	if(td->td_name[0] != 0) printf(" -- %s is doing some killin\n", td->td_name);
-		//	else printf(" -- %s is doing some killin\n", td->td_proc->p_comm);
-
-		//}
-
-                error = copyout(&tmpstat, statusp, sizeof(int));
-        }
-        if (error == 0 && rup != NULL)
-                error = linux_copyout_rusage(&wru.wru_self, rup);
-
-        if (error == 0 && infop != NULL && td->td_retval[0] != 0) {
-                sig = bsd_to_linux_signal(siginfo.si_signo);
-		if (WIFSTOPPED(status)) {
-                    siginfo.si_status = bsd_to_linux_signal(WSTOPSIG(status));
-                }else if (WIFSIGNALED(status)) {
-			siginfo.si_status = bsd_to_linux_signal(WTERMSIG(status));
-		}
-
-//		printf("-- Sending 0x%x, 0x%x\n", siginfo.si_status, sig);
-                siginfo_to_lsiginfo(&siginfo, &lsi, sig);
-                error = copyout(&lsi, infop, sizeof(lsi));
-        }
-
-	//if (error == 0 || error == ERESTARTSYS) {
-//	      printf("LINUX_WAIT_FINAL: target_id=%d, reaped_pid=%ld, raw_bsd_status=0x%x, translated_tmpstat=0x%x, bsd_sig=%d, error=%d, infop=%d\n", id, (long)td->td_retval[0], status, tmpstat, WSTOPSIG(status), error, infop == NULL);
-	//}
-
-        return (error);
-}
-*/
-
 
 #if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
 int
@@ -880,12 +765,9 @@ linux_waitpid(struct thread *td, struct linux_waitpid_args *args)
 #endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
 
 int linux_wait4(struct thread *td, struct linux_wait4_args *args) {
-//	char debug_name[100];
 	struct proc *p;
 	int options, id=0, idtype=P_ALL, error;
-//	int	verbose=0;
 
-//	if (td->td_name[3]==0 && td->td_name[0]=='g' && td->td_name[1]=='d' && td->td_name[2]=='b') verbose=1;
 
 
 	if (args->options & ~(LINUX_WUNTRACED | LINUX_WNOHANG | LINUX_WCONTINUED | __WCLONE | __WNOTHREAD | __WALL)){ error=EINVAL; goto out; }
@@ -894,20 +776,11 @@ int linux_wait4(struct thread *td, struct linux_wait4_args *args) {
 	options = 0;
 	linux_to_bsd_waitopts(args->options, &options);
 
-//	printf("LINUX_WAIT4: pid=%ld, options=0x%x, status_ptr=%p bsd_opts=0x%x\n",  (long)args->pid, args->options, args->status, options);
 
 	/*
 	 * For backward compatibility we implicitly add flags WEXITED
 	 * and WTRAPPED here.
 	 */
-
-	//if(options == 0 && args->pid != 0){
-	//	p = pfind(args->pid);
-	//	if (p != NULL) {
-	//		p->p_flag |= P_STATCHILD; 
-	//		PROC_UNLOCK(p);
-	//	}
-	//}
 	options |= WEXITED | WTRAPPED | WSTOPPED;
 
 	if (args->pid == WAIT_ANY) {
@@ -930,34 +803,16 @@ int linux_wait4(struct thread *td, struct linux_wait4_args *args) {
 		id = (id_t)args->pid;
 	}
 
-
-/*
-	debug_name[0]=0;
-        if(id != 0){
-                struct proc *p = pfind(id);
-                if(p){
-                        strcpy(debug_name, p->p_comm);
-                        PROC_UNLOCK(p);
-                }
-        }
-*/
-                
-//	if(verbose) printf("> linux_wait4('%s [%d]', pid=%d [%s], opt=0x%x) -> wait4(%d, %d, 0x%x)\n", td->td_name, td->td_proc->p_pid, id, debug_name, args->options, idtype, id, options);
 	error=linux_common_wait(td, idtype, id, args->status, options, args->rusage, NULL);
 out:
-//	if(verbose) printf("< linux_wait4('%s [%d]', pid=%d [%s], opt=0x%x) = %d [retval=0x%lx]\n", td->td_name, td->td_proc->p_pid, id, debug_name, args->options, error, td->td_retval[0]);
 	return(error);
 }
 
-int
-linux_waitid(struct thread *td, struct linux_waitid_args *args)
-{
+int linux_waitid(struct thread *td, struct linux_waitid_args *args) {
 	idtype_t idtype;
 	int error, options;
 	struct proc *p;
 	pid_t id;
-
-	printf("---- waittid\n");
 
 	if (args->options & ~(LINUX_WNOHANG | LINUX_WNOWAIT | LINUX_WEXITED |
 	    LINUX_WSTOPPED | LINUX_WCONTINUED | __WCLONE | __WNOTHREAD | __WALL))
@@ -1001,9 +856,7 @@ linux_waitid(struct thread *td, struct linux_waitid_args *args)
 }
 
 #ifdef LINUX_LEGACY_SYSCALLS
-int
-linux_mknod(struct thread *td, struct linux_mknod_args *args)
-{
+int linux_mknod(struct thread *td, struct linux_mknod_args *args) {
 	int error;
 
 	switch (args->mode & S_IFMT) {
@@ -2227,11 +2080,7 @@ linux_pselect6(struct thread *td, struct linux_pselect6_args *args)
 	return (error);
 }
 
-static int
-linux_common_pselect6(struct thread *td, l_int nfds, l_fd_set *readfds,
-    l_fd_set *writefds, l_fd_set *exceptfds, struct timespec *tsp,
-    l_uintptr_t *sig)
-{
+static int linux_common_pselect6(struct thread *td, l_int nfds, l_fd_set *readfds, l_fd_set *writefds, l_fd_set *exceptfds, struct timespec *tsp, l_uintptr_t *sig) {
 	struct timeval utv, tv0, tv1, *tvp;
 	struct l_pselect6arg lpse6;
 	sigset_t *ssp;
@@ -2285,10 +2134,7 @@ linux_common_pselect6(struct thread *td, l_int nfds, l_fd_set *readfds,
 }
 
 #if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
-int
-linux_pselect6_time64(struct thread *td,
-    struct linux_pselect6_time64_args *args)
-{
+int linux_pselect6_time64(struct thread *td, struct linux_pselect6_time64_args *args) {
 	struct timespec ts, *tsp;
 	int error;
 
@@ -2323,15 +2169,12 @@ linux_ppoll(struct thread *td, struct linux_ppoll_args *args)
 	} else
 		tsp = NULL;
 
-	error = linux_common_ppoll(td, args->fds, args->nfds, tsp,
-	    args->sset, args->ssize);
+	error = linux_common_ppoll(td, args->fds, args->nfds, tsp, args->sset, args->ssize);
 	if (error == 0 && args->tsp != NULL) error = linux_put_timespec(&uts, args->tsp);
 	return (error);
 }
 
-static int
-linux_common_ppoll(struct thread *td, struct pollfd *fds, uint32_t nfds, struct timespec *tsp, l_sigset_t *sset, l_size_t ssize)
-{
+static int linux_common_ppoll(struct thread *td, struct pollfd *fds, uint32_t nfds, struct timespec *tsp, l_sigset_t *sset, l_size_t ssize) {
 	struct timespec ts0, ts1;
 	struct pollfd stackfds[32];
 	struct pollfd *kfds;
@@ -2378,9 +2221,7 @@ out:
 }
 
 #if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
-int
-linux_ppoll_time64(struct thread *td, struct linux_ppoll_time64_args *args)
-{
+int linux_ppoll_time64(struct thread *td, struct linux_ppoll_time64_args *args) {
 	struct timespec uts, *tsp;
 	int error;
 
@@ -2391,17 +2232,16 @@ linux_ppoll_time64(struct thread *td, struct linux_ppoll_time64_args *args)
 		tsp = &uts;
 	} else
  		tsp = NULL;
-	error = linux_common_ppoll(td, args->fds, args->nfds, tsp,
-	    args->sset, args->ssize);
+
+	error = linux_common_ppoll(td, args->fds, args->nfds, tsp, args->sset, args->ssize);
+
 	if (error == 0 && args->tsp != NULL)
 		error = linux_put_timespec64(&uts, args->tsp);
 	return (error);
 }
 #endif /* __i386__ || (__amd64__ && COMPAT_LINUX32) */
 
-static int
-linux_pollin(struct thread *td, struct pollfd *fds, struct pollfd *ufds, u_int nfd)
-{
+static int linux_pollin(struct thread *td, struct pollfd *fds, struct pollfd *ufds, u_int nfd) {
 	int error;
 	u_int i;
 
@@ -2416,9 +2256,7 @@ linux_pollin(struct thread *td, struct pollfd *fds, struct pollfd *ufds, u_int n
 	return (0);
 }
 
-static int
-linux_pollout(struct thread *td, struct pollfd *fds, struct pollfd *ufds, u_int nfd)
-{
+static int linux_pollout(struct thread *td, struct pollfd *fds, struct pollfd *ufds, u_int nfd) {
 	int error = 0;
 	u_int i, n = 0;
 
@@ -2438,9 +2276,7 @@ linux_pollout(struct thread *td, struct pollfd *fds, struct pollfd *ufds, u_int 
 }
 
 static int
-linux_sched_rr_get_interval_common(struct thread *td, pid_t pid,
-    struct timespec *ts)
-{
+linux_sched_rr_get_interval_common(struct thread *td, pid_t pid, struct timespec *ts) {
 	struct thread *tdt;
 	int error;
 
@@ -2473,10 +2309,7 @@ linux_sched_rr_get_interval(struct thread *td,
 }
 
 #if defined(__i386__) || (defined(__amd64__) && defined(COMPAT_LINUX32))
-int
-linux_sched_rr_get_interval_time64(struct thread *td,
-    struct linux_sched_rr_get_interval_time64_args *uap)
-{
+int linux_sched_rr_get_interval_time64(struct thread *td, struct linux_sched_rr_get_interval_time64_args *uap) {
 	struct timespec ts;
 	int error;
 
@@ -2492,9 +2325,7 @@ linux_sched_rr_get_interval_time64(struct thread *td,
  * the thread group thread id is equal to the process id.
  * Glibc depends on this magic (assert in pthread_getattr_np.c).
  */
-struct thread *
-linux_tdfind(struct thread *td, lwpid_t tid, pid_t pid)
-{
+struct thread *linux_tdfind(struct thread *td, lwpid_t tid, pid_t pid) {
 	struct linux_emuldata *em;
 	struct thread *tdt;
 	struct proc *p;
@@ -2529,9 +2360,7 @@ linux_tdfind(struct thread *td, lwpid_t tid, pid_t pid)
 	return (NULL);
 }
 
-void
-linux_to_bsd_waitopts(int options, int *bsdopts)
-{
+void linux_to_bsd_waitopts(int options, int *bsdopts) {
 
 	if (options & LINUX_WNOHANG)    *bsdopts |= WNOHANG;
 	if (options & LINUX_WUNTRACED)  *bsdopts |= WUNTRACED;
@@ -2539,14 +2368,9 @@ linux_to_bsd_waitopts(int options, int *bsdopts)
 	if (options & LINUX_WCONTINUED) *bsdopts |= WCONTINUED;
 	if (options & LINUX_WNOWAIT) 	*bsdopts |= WNOWAIT;
 	if (options & __WCLONE) 	*bsdopts |= WLINUXCLONE;
-
-//	if (options & __WCLONE) *bsdopts |= WLINUXCLONE;
-//	if (options & (__WCLONE | __WALL)) *bsdopts |= WLINUXCLONE;		// This breaks strace
 }
 
-int
-linux_getrandom(struct thread *td, struct linux_getrandom_args *args)
-{
+int linux_getrandom(struct thread *td, struct linux_getrandom_args *args) {
 	struct uio uio;
 	struct iovec iov;
 	int error;
