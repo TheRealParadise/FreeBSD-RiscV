@@ -109,7 +109,6 @@ void bsd_to_linux_regset(const struct reg *b_reg, struct linux_pt_regset *l_regs
 void linux_to_bsd_regset(struct reg *b_reg, const struct linux_pt_regset *l_regset) {
 
 	b_reg->sepc = l_regset->pc;		// TODO: Still have to check what PC gdb changes
-
 	b_reg->ra = l_regset->ra;
 	b_reg->sp = l_regset->sp;
 	b_reg->gp = l_regset->gp;
@@ -154,7 +153,7 @@ int linux_ptrace_getregs_machdep(struct thread *td, pid_t pid __unused, struct l
 
 	for (int i = 0; i < 8; i++) l_regset->a[i] = tf->tf_a[i];
 	for (int i = 0; i < 3; i++) l_regset->t[i] = tf->tf_t[i];
-	for (int i = 0; i < 4; i++) l_regset->t[i] = tf->tf_t[3+i];
+	for (int i = 0; i < 4; i++) l_regset->t3[i] = tf->tf_t[3+i];
 
 	l_regset->s[0] = tf->tf_s[0];
 	l_regset->s[1] = tf->tf_s[1];

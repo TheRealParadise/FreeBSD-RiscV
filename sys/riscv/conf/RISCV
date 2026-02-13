@@ -25,8 +25,8 @@ makeoptions	WITH_CTF=1		# Run ctfconvert(1) for DTrace support
 
 options  	KDB			# Kernel debugger
 options  	DDB			# Interactive debugger
-options  	WITNESS			# Lock traces
-options  	WITNESS_SKIPSPIN	# Don't do spinlocks
+#options  	WITNESS			# Lock traces
+#options  	WITNESS_SKIPSPIN	# Don't do spinlocks
 options  	STACK			# Stack traces
 options 	KSTACK_PAGES=8
 

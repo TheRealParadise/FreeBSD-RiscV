@@ -590,8 +590,6 @@ static void linux_exec_sysvec_init(void *param) {
 	ktimekeep_base = (l_uintptr_t *)(linux_vdso_mapping + tkoff);
 	*ktimekeep_base = sv->sv_shared_page_base + sv->sv_timekeep_offset;
 
-
-
 }
 SYSINIT(elf_linux_exec_sysvec_init, SI_SUB_EXEC + 1, SI_ORDER_ANY, linux_exec_sysvec_init, &elf_linux_sysvec);
 
@@ -719,7 +717,6 @@ linux64_elf_modevent(module_t mod, int type, void *data)
 			SET_FOREACH(lihp, linux_ioctl_handler_set) linux_ioctl_register_handler(*lihp);
 
 			stclohz = (stathz ? stathz : hz);
-			if (bootverbose) printf("Linux RiscV64 ELF exec handler installed\n");
 
 			uint32_t hwcap = 0;
 			hwcap |= (1 << ('I' - 'A'));	// TODO fix me, make me dynamic
@@ -729,6 +726,9 @@ linux64_elf_modevent(module_t mod, int type, void *data)
 			hwcap |= (1 << ('D' - 'A'));
 			hwcap |= (1 << ('C' - 'A'));
 			linux_elf_hwcap=hwcap;
+
+			if (bootverbose) printf("Linux RiscV64 ELF exec handler installed\n");
+
 		}
 		break;
 	case MOD_UNLOAD:

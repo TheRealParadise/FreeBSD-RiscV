@@ -37,6 +37,9 @@
 #include <sys/kernel.h>
 #include <sys/libkern.h>
 #include <sys/sysctl.h>
+#include <sys/rman.h>
+#include <sys/taskqueue.h>
+#include <machine/resource.h>
 
 #include <dev/iicbus/iicbus.h>
 #include <dev/iicbus/iiconf.h>
@@ -89,7 +92,12 @@ static device_method_t tmp461_methods[] = {
 };
 
 struct tmp461_softc {
+	device_t		dev;
 	struct mtx		mtx;
+	struct task		task_handler;
+	struct resource 	*irq_res;
+	void           		*irq_tag;
+	int			rid;
 	uint8_t			conf;
 };
 
@@ -106,12 +114,9 @@ struct tmp461_data {
 };
 
 static struct tmp461_data sensor_list[] = {
-	{"adt7461", "ADT7461 Thernal Sensor Information",
-	    TMP461_REMOTE_TEMP_DOUBLE_REG},
-	{"tmp461", "TMP461 Thernal Sensor Information",
-	    TMP461_LOCAL_TEMP_DOUBLE_REG | TMP461_REMOTE_TEMP_DOUBLE_REG},
-	{"tmp451", "TMP451 Thernal Sensor Information",
-	    TMP461_LOCAL_TEMP_DOUBLE_REG | TMP461_REMOTE_TEMP_DOUBLE_REG}
+	{"adt7461", "ADT7461 Thernal Sensor Information", TMP461_REMOTE_TEMP_DOUBLE_REG},
+	{"tmp461", "TMP461 Thernal Sensor Information", TMP461_LOCAL_TEMP_DOUBLE_REG | TMP461_REMOTE_TEMP_DOUBLE_REG},
+	{"tmp451", "TMP451 Thernal Sensor Information", TMP461_LOCAL_TEMP_DOUBLE_REG | TMP461_REMOTE_TEMP_DOUBLE_REG}
 };
 
 static struct ofw_compat_data tmp461_compat_data[] = {
@@ -124,9 +129,18 @@ static struct ofw_compat_data tmp461_compat_data[] = {
 DRIVER_MODULE(tmp461, iicbus, tmp461_driver, 0, 0);
 IICBUS_FDT_PNP_INFO(tmp461_compat_data);
 
-static int
-tmp461_attach(device_t dev)
-{
+
+static void tmp4x1_thermal_task_handler(void *context, int pending) {
+	struct tmp461_softc *sc=context;
+	device_printf(sc->dev, "Interrupt triggered: Should be adjusting PWM...\n");
+}
+
+static void tmp4x1_thermal_intr(void *arg){
+	struct tmp461_softc *sc=arg;
+	taskqueue_enqueue(taskqueue_swi, &sc->task_handler);
+}
+
+static int tmp461_attach(device_t dev) {
 	struct sysctl_oid *sensor_root_oid;
 	struct tmp461_data *compat_data;
 	struct sysctl_ctx_list *ctx;
@@ -134,69 +148,63 @@ tmp461_attach(device_t dev)
 	uint8_t data;
 
 	sc = device_get_softc(dev);
-	compat_data = (struct tmp461_data *)
-	    ofw_bus_search_compatible(dev, tmp461_compat_data)->ocd_data;
+	compat_data = (struct tmp461_data *) ofw_bus_search_compatible(dev, tmp461_compat_data)->ocd_data;
+	sc->dev = dev;
 	sc->conf = compat_data->flags;
 	ctx = device_get_sysctl_ctx(dev);
 
 	mtx_init(&sc->mtx, "tmp4x1 temperature", "temperature", MTX_DEF);
 
-	sensor_root_oid = SYSCTL_ADD_NODE(ctx, SYSCTL_STATIC_CHILDREN(_hw),
-	    OID_AUTO, "temperature", CTLFLAG_RD | CTLFLAG_MPSAFE, NULL,
-	    "Thermal Sensor Information");
-	if (sensor_root_oid == NULL)
-		return (ENXIO);
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &sc->rid, RF_ACTIVE);
+	if(sc->irq_res){
+		bus_setup_intr(dev, sc->irq_res, INTR_TYPE_MISC | INTR_MPSAFE, NULL, tmp4x1_thermal_intr, sc, &sc->irq_tag);
+		TASK_INIT(&sc->task_handler, 0, tmp4x1_thermal_task_handler, sc);
+	}else{
+		device_printf(dev, "Could not initialize IRQ for the thermalsensor\n");
+	}
 
-	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(sensor_root_oid), OID_AUTO,
-	    "board", CTLTYPE_INT | CTLFLAG_RD, dev,
-	    TMP461_LOCAL_MEASURE, tmp461_sensor_sysctl,
-	    "IK1", compat_data->desc);
+	sensor_root_oid = SYSCTL_ADD_NODE(ctx, SYSCTL_STATIC_CHILDREN(_hw), OID_AUTO, "temperature", CTLFLAG_RD | CTLFLAG_MPSAFE, NULL, "Thermal Sensor Information");
+	if (sensor_root_oid == NULL) return (ENXIO);
+
+	SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(sensor_root_oid), OID_AUTO, "board", CTLTYPE_INT | CTLFLAG_RD, dev, TMP461_LOCAL_MEASURE, tmp461_sensor_sysctl, "IK1", compat_data->desc);
 
 	/* get status register */
-	if (tmp461_read_1(dev, TMP461_STATUS_REG, &data) != 0)
-		return (ENXIO);
+	if (tmp461_read_1(dev, TMP461_STATUS_REG, &data) != 0) return (ENXIO);
 
-	if (!(data & TMP461_STATUS_REG_TEMP_LOCAL))
-		SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(sensor_root_oid), OID_AUTO,
-		    "cpu", CTLTYPE_INT | CTLFLAG_RD, dev,
-		    TMP461_REMOTE_MEASURE, tmp461_sensor_sysctl,
-		    "IK1", compat_data->desc);
+	if (!(data & TMP461_STATUS_REG_TEMP_LOCAL)) SYSCTL_ADD_PROC(ctx, SYSCTL_CHILDREN(sensor_root_oid), OID_AUTO, "cpu", CTLTYPE_INT | CTLFLAG_RD, dev, TMP461_REMOTE_MEASURE, tmp461_sensor_sysctl, "IK1", compat_data->desc);
 
 	/* set standby mode */
-	if (tmp461_read_1(dev, TMP461_CONFIG_REG_R, &data) != 0)
-		return (ENXIO);
+	if (tmp461_read_1(dev, TMP461_CONFIG_REG_R, &data) != 0) return (ENXIO);
 
 	data |= TMP461_CONFIG_REG_STANDBY_BIT;
-	if (tmp461_write_1(dev, TMP461_CONFIG_REG_W, data) != 0)
-		return (ENXIO);
+	if (tmp461_write_1(dev, TMP461_CONFIG_REG_W, data) != 0) return (ENXIO);
+
 
 	return (0);
 }
 
-static int
-tmp461_probe(device_t dev)
-{
+static int tmp461_probe(device_t dev) {
 	struct tmp461_data *compat_data;
 
-	if (!ofw_bus_status_okay(dev))
-		return (ENXIO);
+	if (!ofw_bus_status_okay(dev)) return (ENXIO);
 
-	compat_data = (struct tmp461_data *)
-	    ofw_bus_search_compatible(dev, tmp461_compat_data)->ocd_data;
-	if (!compat_data)
-		return (ENXIO);
+	compat_data = (struct tmp461_data *) ofw_bus_search_compatible(dev, tmp461_compat_data)->ocd_data;
+	if (!compat_data) return (ENXIO);
 
 	device_set_desc(dev, compat_data->compat);
 
 	return (BUS_PROBE_GENERIC);
 }
 
-static int
-tmp461_detach(device_t dev)
-{
+static int tmp461_detach(device_t dev) {
 	struct tmp461_softc *sc;
-
 	sc = device_get_softc(dev);
+
+	if (sc->irq_tag){
+		taskqueue_drain(taskqueue_swi, &sc->task_handler);
+		bus_teardown_intr(dev, sc->irq_res, sc->irq_tag);
+	}
+
 	mtx_destroy(&sc->mtx);
 
 	return (0);
@@ -247,18 +255,17 @@ tmp461_read_temperature(device_t dev, int32_t *temperature, bool remote_measure)
 		goto fail;
 
 	/* wait for conversion time */
-	DELAY(TMP461_SENSOR_MAX_CONV_TIME/(1UL<<data));
+	//DELAY(TMP461_SENSOR_MAX_CONV_TIME/(1UL<<data));
+	pause_sbt("tmp461", mstosbt(TMP461_SENSOR_MAX_CONV_TIME >> data), 0, C_HARDCLOCK);
 
 	/* read config register offset */
 	error = tmp461_read_1(dev, TMP461_CONFIG_REG_R, &data);
 	if (error != 0)
 		goto fail;
 
-	offset = (data & TMP461_CONFIG_REG_TEMP_RANGE_BIT ?
-	    TMP461_EXTENDED_TEMP_MODIFIER : 0);
+	offset = (data & TMP461_CONFIG_REG_TEMP_RANGE_BIT ? TMP461_EXTENDED_TEMP_MODIFIER : 0);
 
-	reg = remote_measure ?
-	    TMP461_GLOBAL_TEMP_REG_MSB : TMP461_LOCAL_TEMP_REG_MSB;
+	reg = remote_measure ? TMP461_GLOBAL_TEMP_REG_MSB : TMP461_LOCAL_TEMP_REG_MSB;
 
 	/* read temeperature value*/
 	error = tmp461_read_1(dev, reg, &data);
@@ -270,8 +277,7 @@ tmp461_read_temperature(device_t dev, int32_t *temperature, bool remote_measure)
 
 	if (remote_measure) {
 		if (sc->conf & TMP461_REMOTE_TEMP_DOUBLE_REG) {
-			error = tmp461_read_1(dev,
-			    TMP461_GLOBAL_TEMP_REG_LSB, &data);
+			error = tmp461_read_1(dev, TMP461_GLOBAL_TEMP_REG_LSB, &data);
 			if (error != 0)
 				goto fail;
 
@@ -279,8 +285,7 @@ tmp461_read_temperature(device_t dev, int32_t *temperature, bool remote_measure)
 		}
 	} else {
 		if (sc->conf & TMP461_LOCAL_TEMP_DOUBLE_REG) {
-			error = tmp461_read_1(dev,
-			    TMP461_LOCAL_TEMP_REG_LSB, &data);
+			error = tmp461_read_1(dev, TMP461_LOCAL_TEMP_REG_LSB, &data);
 			if (error != 0)
 				goto fail;
 
