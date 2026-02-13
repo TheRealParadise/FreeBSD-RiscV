@@ -48,6 +48,8 @@ For information on synchronizing your source tree with one or more of the FreeBS
 
 -----
 
+This is an experimental version, there maybe new bugs that I didn't run into yet but here it's stable on myu SiFive Unmatched running and compiling native and Linux stuff in the linuxulator for weeks.
+
 This pathed version was made for SiFive Unmatched and includes;
 * Fully working Linuxulator
 * Patched and included the IWLWIFI driver in the build
@@ -61,10 +63,29 @@ This pathed version was made for SiFive Unmatched and includes;
 * Implemented some experimental stuff like the linux splice syscall (using sendfile) and some others
 * May still include some debug messages (I'm currently doublechecking if I left any)
 
-This is an experimental version, there maybe new bugs that I didn't run into yet but here it's stable on myu SiFive Unmatched running and compiling native and Linux stuff in the linuxulator for weeks.
-
 Take what you need to implement this in BASE;
  If you copy riscv/linux, restore the syscall.master file (no added syscalls) and apply some minor changes to compat/linux you get this running on the vanilla kernel in no-time.
  linprocfs changes require you to pull the pseudofs code to give it thread enumeration powers.
  iwlwifi drivers fix are a couple of defines and a dummy function and also easy to replicate
  'get gdb working' patches are what probably breaks compatibility (compat/linux/linux_ptrace.c and linux_misc.c) and need some #ifdef stuff to make it other arch friendly again probably.
+
+Known limitations/bugs;
+* dtrace context switches may panic (don't think it's something I did)
+* Icinga2 does not yet run in the Linuxulator because of some bugs in futexes
+* Ubuntu 2024 binaries have difficulty with NFS, works fine if I use tmpfs (didn't test anything else yet)
+* There is a lock traversal message when you use Witness; this is becuase of a 'bad' hack to get glusterfds running don't worry about it the order should always be correct
+* Thermal sensor is still work in progress, it should activate PWM 1.2 when there is an interrupt and set it back to 50% duty when it hits the ice age.
+* hexdump on /dev/mem may crash the tilelink bus; this is also in base and I did hava a patch but removed it because it was a bit too aggressive sometimes and may need revising
+* Linuxulator currenty always stores FP registers and should check if they even have been used and not store when to used
+* Some hardcoded values may not be compatible with other CPU's (cacheline size, identity bits, etc); they need to be made dynamic.
+
+Linuxulator;
+* Tested with Ubuntu 2024 - Downloaded the image, mounted it, copied the files to /compat/linux and did `chroot /compat/linux /bin/bash`
+* Runs glusterfsd to the extend you can mount it and put files in it and tools see the node/cluster but at some point after a couple of hours it crashes
+* Almost runs Icinga2 but there is a Futex issue
+* Fully compiled the latest GDB in the Linuxulator
+* GDB can actually live debug linux processes in the Linuxulator (this doesn't even work on Tier 1 platforms yet)
+* Tested a bunch of other stuff like python, go and nodejs and they seem to work fine
+* You can even use lsmod and rmmod and some other linux tools now just work like you are running a real Linux.
+* Fixed an issue with fuse so you can mount and dismount the glusterfs volume from within the Linuxulator
+
