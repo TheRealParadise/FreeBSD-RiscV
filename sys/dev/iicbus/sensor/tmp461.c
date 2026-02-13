@@ -67,7 +67,7 @@
 /* 28.4 fixed point representation of 273.15f */
 #define TMP461_C_TO_K_FIX			4370
 
-#define TMP461_SENSOR_MAX_CONV_TIME		16000000
+#define TMP461_SENSOR_MAX_CONV_TIME		16000
 #define TMP461_LOCAL_MEASURE			0
 #define TMP461_REMOTE_MEASURE			1
 
@@ -132,12 +132,18 @@ IICBUS_FDT_PNP_INFO(tmp461_compat_data);
 
 static void tmp4x1_thermal_task_handler(void *context, int pending) {
 	struct tmp461_softc *sc=context;
+	uint8_t status;
+
+	(void)tmp461_read_1(sc->dev, TMP461_STATUS_REG, &status);	// Clear the status
+	
+
 	device_printf(sc->dev, "Interrupt triggered: Should be adjusting PWM...\n");
 }
 
 static void tmp4x1_thermal_intr(void *arg){
 	struct tmp461_softc *sc=arg;
 	taskqueue_enqueue(taskqueue_swi, &sc->task_handler);
+
 }
 
 static int tmp461_attach(device_t dev) {
@@ -152,15 +158,16 @@ static int tmp461_attach(device_t dev) {
 	sc->dev = dev;
 	sc->conf = compat_data->flags;
 	ctx = device_get_sysctl_ctx(dev);
+	sc->rid=0;
 
 	mtx_init(&sc->mtx, "tmp4x1 temperature", "temperature", MTX_DEF);
 
-	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &sc->rid, RF_ACTIVE);
+	sc->irq_res = bus_alloc_resource_any(dev, SYS_RES_IRQ, &sc->rid, RF_ACTIVE|RF_SHAREABLE);
 	if(sc->irq_res){
 		bus_setup_intr(dev, sc->irq_res, INTR_TYPE_MISC | INTR_MPSAFE, NULL, tmp4x1_thermal_intr, sc, &sc->irq_tag);
 		TASK_INIT(&sc->task_handler, 0, tmp4x1_thermal_task_handler, sc);
 	}else{
-		device_printf(dev, "Could not initialize IRQ for the thermalsensor\n");
+		device_printf(dev, "Could not initialize IRQ for the thermal sensor\n");
 	}
 
 	sensor_root_oid = SYSCTL_ADD_NODE(ctx, SYSCTL_STATIC_CHILDREN(_hw), OID_AUTO, "temperature", CTLFLAG_RD | CTLFLAG_MPSAFE, NULL, "Thermal Sensor Information");
@@ -264,7 +271,6 @@ tmp461_read_temperature(device_t dev, int32_t *temperature, bool remote_measure)
 		goto fail;
 
 	offset = (data & TMP461_CONFIG_REG_TEMP_RANGE_BIT ? TMP461_EXTENDED_TEMP_MODIFIER : 0);
-
 	reg = remote_measure ? TMP461_GLOBAL_TEMP_REG_MSB : TMP461_LOCAL_TEMP_REG_MSB;
 
 	/* read temeperature value*/
