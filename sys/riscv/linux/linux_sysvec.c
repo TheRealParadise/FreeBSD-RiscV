@@ -201,8 +201,8 @@ void linux64_arch_copyout_auxargs(struct image_params *imgp, Elf_Auxinfo **pos) 
         	AUXARGS_ENTRY((*pos), LINUX_AT_HWCAP2, *imgp->sysent->sv_hwcap2);
 	}
 	AUXARGS_ENTRY((*pos), LINUX_AT_PLATFORM, PTROUT(linux_platform));
-	AUXARGS_ENTRY((*pos), AT_L1I_CACHELINESIZE, 64); // SiFive/U74 specific TODO: get this some way else
-	AUXARGS_ENTRY((*pos), AT_L1D_CACHELINESIZE, 64);
+	AUXARGS_ENTRY((*pos), AT_L1I_CACHELINESIZE, CACHE_LINE_SIZE); 
+	AUXARGS_ENTRY((*pos), AT_L1D_CACHELINESIZE, CACHE_LINE_SIZE);
 }
 
 /*
@@ -244,6 +244,8 @@ int linux_membarrier(struct thread *td, struct linux_membarrier_args *args) {
 	* is usually enough to trick the app into thinking 
 	* the barrier happened.
 	*/
+	__asm__ __volatile__ ("fence.i" ::: "memory");
+
 	return (0); 
 }
 
@@ -612,8 +614,7 @@ static void linux_vdso_install(const void *param) {
 
 }
 
-SYSINIT(elf_linux_vdso_init, SI_SUB_EXEC + 1, SI_ORDER_FIRST,
-    linux_vdso_install, NULL);
+SYSINIT(elf_linux_vdso_init, SI_SUB_EXEC + 1, SI_ORDER_FIRST, linux_vdso_install, NULL);
 
 static void linux_vdso_deinstall(const void *param) {
 	__elfN(linux_shared_page_fini)(linux_vdso_obj, linux_vdso_mapping, LINUX_VDSOPAGE_SIZE);
@@ -622,56 +623,57 @@ static void linux_vdso_deinstall(const void *param) {
 SYSUNINIT(elf_linux_vdso_uninit, SI_SUB_EXEC, SI_ORDER_FIRST, linux_vdso_deinstall, NULL);
 
 static void linux_vdso_reloc(char *elf, Elf_Addr offset) {
-    Elf_Ehdr *ehdr = (Elf_Ehdr *)elf;
-    Elf_Phdr *phdr = (Elf_Phdr *)(elf + ehdr->e_phoff);
-    Elf_Dyn *dyn = NULL;
-    Elf_Rela *rela = NULL;
-    Elf_Size relasz = 0;
-    Elf_Addr *where;
-    Elf_Addr loadaddr = 0;
-    int i;
+	Elf_Ehdr *ehdr = (Elf_Ehdr *)elf;
+	Elf_Phdr *phdr = (Elf_Phdr *)(elf + ehdr->e_phoff);
+	Elf_Dyn *dyn = NULL;
+	Elf_Rela *rela = NULL;
+	Elf_Size relasz = 0;
+	Elf_Addr *where;
+	Elf_Addr loadaddr = 0;
+	int i;
 
-    // Find the load address (base VADDR) of the ELF.
-    for (i = 0; i < ehdr->e_phnum; i++) {
-        if (phdr[i].p_type == PT_LOAD) {
-            loadaddr = phdr[i].p_vaddr;
-            break;
-        }
-    }
+	// Find the load address (base VADDR) of the ELF.
+	for (i = 0; i < ehdr->e_phnum; i++) {
+	if (phdr[i].p_type == PT_LOAD) {
+			loadaddr = phdr[i].p_vaddr;
+			break;
+		}
+	}
 
-    // Find the Dynamic section
-    for (i = 0; i < ehdr->e_phnum; i++) {
-        if (phdr[i].p_type == PT_DYNAMIC) {
-            dyn = (Elf_Dyn *)(elf + phdr[i].p_offset);
-            break;
-        }
-    }
-    if (dyn == NULL) return;
+	// Find the Dynamic section
+	for (i = 0; i < ehdr->e_phnum; i++) {
+		if (phdr[i].p_type == PT_DYNAMIC) {
+			dyn = (Elf_Dyn *)(elf + phdr[i].p_offset);
+			break;
+		}
+	}
 
-    // Extract relocation table info. 
-    for (; dyn->d_tag != DT_NULL; dyn++) {
-        switch (dyn->d_tag) {
-        case DT_RELA:
-            // Translate VA to buffer pointer: (VA - link_time_base) + buffer_start
-            rela = (Elf_Rela *)(elf + (dyn->d_un.d_ptr - loadaddr));
-            break;
-        case DT_RELASZ:
-            relasz = dyn->d_un.d_val;
-            break;
-        }
-    }
+	if (dyn == NULL) return;
 
-    if (rela == NULL || relasz == 0) return;
+	// Extract relocation table info. 
+	for (; dyn->d_tag != DT_NULL; dyn++) {
+		switch (dyn->d_tag) {
+			case DT_RELA:
+				// Translate VA to buffer pointer: (VA - link_time_base) + buffer_start
+				rela = (Elf_Rela *)(elf + (dyn->d_un.d_ptr - loadaddr));
+				break;
+			case DT_RELASZ:
+				relasz = dyn->d_un.d_val;
+				break;
+		}
+	}
 
-    // Perform the relocations 
-    for (i = 0; i < relasz / sizeof(Elf_Rela); i++) {
-        uint64_t type = ELF_R_TYPE(rela[i].r_info);
+	if (rela == NULL || relasz == 0) return;
+
+	// Perform the relocations 
+	for (i = 0; i < relasz / sizeof(Elf_Rela); i++) {
+		uint64_t type = ELF_R_TYPE(rela[i].r_info);
         
-        if (type == R_RISCV_RELATIVE) {
-		where = (Elf_Addr *)(elf + (rela[i].r_offset - loadaddr));	// r_offset is also a VA. Translate it to a pointer within our buffer.
-		*where = offset + rela[i].r_addend;	            		// The actual magic: store the final runtime address.
-        }
-    }
+		if (type == R_RISCV_RELATIVE) {
+			where = (Elf_Addr *)(elf + (rela[i].r_offset - loadaddr));	// r_offset is also a VA. Translate it to a pointer within our buffer.
+			*where = offset + rela[i].r_addend;	            		// The actual magic: store the final runtime address.
+		}
+	}
 }
 
 
@@ -717,15 +719,7 @@ linux64_elf_modevent(module_t mod, int type, void *data)
 			SET_FOREACH(lihp, linux_ioctl_handler_set) linux_ioctl_register_handler(*lihp);
 
 			stclohz = (stathz ? stathz : hz);
-
-			uint32_t hwcap = 0;
-			hwcap |= (1 << ('I' - 'A'));	// TODO fix me, make me dynamic
-			hwcap |= (1 << ('M' - 'A'));
-			hwcap |= (1 << ('A' - 'A'));
-			hwcap |= (1 << ('F' - 'A'));
-			hwcap |= (1 << ('D' - 'A'));
-			hwcap |= (1 << ('C' - 'A'));
-			linux_elf_hwcap=hwcap;
+			linux_elf_hwcap=elf_hwcap;		// Doesn't this happen already somewhere?
 
 			if (bootverbose) printf("Linux RiscV64 ELF exec handler installed\n");
 
